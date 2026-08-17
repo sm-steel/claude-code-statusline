@@ -26,10 +26,17 @@ fi
 # Replace whatever is currently at the target (file, symlink, or nothing) with a
 # symlink to the repo copy, so future `git pull`s take effect immediately with no
 # separate copy step.
+#
+# On Windows, Git Bash's `ln -s` defaults to a mode that can silently fall back to
+# copying the file when it lacks symlink privilege — it still exits 0, so the exit
+# code alone can't be trusted. MSYS=winsymlinks:nativestrict forces it to attempt a
+# real NTFS symlink and fail loudly instead of faking it; `[ -L ]` afterward is the
+# actual ground truth on both platforms. No effect on native Linux/macOS bash.
 rm -f "$TARGET"
-if ln -s "$SOURCE" "$TARGET" 2>/dev/null; then
+if MSYS=winsymlinks:nativestrict ln -s "$SOURCE" "$TARGET" 2>/dev/null && [ -L "$TARGET" ]; then
   echo "Symlinked $TARGET -> $SOURCE"
 else
+  rm -f "$TARGET"
   echo "Symlink creation failed."
   echo "On Windows this needs Developer Mode enabled (Settings > Privacy & security >"
   echo "For developers), or running this script as Administrator. Falling back to a"
