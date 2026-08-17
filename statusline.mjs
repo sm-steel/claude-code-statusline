@@ -36,7 +36,15 @@ const RED = rgb('f38ba8');
 const OVERLAY0 = rgb('6c7086'); // dim separators / labels
 const SURFACE2 = rgb('45475a'); // empty bar track
 
-const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
+// Single source of truth for what counts as an ANSI SGR escape, so the three
+// call sites that need slightly different regex forms (global replace, capturing
+// split, anchored full-match) can't drift out of sync with each other.
+const ANSI_PATTERN = '\\x1b\\[[0-9;]*m';
+const ANSI_RE_GLOBAL = new RegExp(ANSI_PATTERN, 'g');
+const ANSI_RE_SPLIT = new RegExp(`(${ANSI_PATTERN})`);
+const ANSI_RE_FULL = new RegExp(`^${ANSI_PATTERN}$`);
+
+const stripAnsi = (s) => s.replace(ANSI_RE_GLOBAL, '');
 
 // Width = codepoint count, EXCEPT for symbols whose Unicode Emoji_Presentation
 // property is "Yes" — those render as a double-width color glyph by default, with no
@@ -62,9 +70,9 @@ function visLen(s) {
 function applyGradientBg(line, total) {
   let col = 0;
   let out = '';
-  for (const chunk of line.split(/(\x1b\[[0-9;]*m)/)) {
+  for (const chunk of line.split(ANSI_RE_SPLIT)) {
     if (!chunk) continue;
-    if (/^\x1b\[[0-9;]*m$/.test(chunk)) {
+    if (ANSI_RE_FULL.test(chunk)) {
       out += chunk;
       continue;
     }
@@ -173,9 +181,16 @@ process.stdin.on('end', () => {
   const hostname = os.hostname().split('.')[0]; // drop any domain suffix
 
   // Flags when the session has cd'd away from where it started, so a stray `cd` doesn't
-  // silently put you in the wrong directory without you noticing.
+  // silently put you in the wrong directory without you noticing. Compared after
+  // normalizing separators/trailing-slash (and case on win32's case-insensitive
+  // filesystem) so a cosmetic difference alone doesn't produce a false positive.
+  const normalizePathForCompare = (p) => {
+    if (!p) return p;
+    const norm = p.replace(/\\/g, '/').replace(/\/+$/, '');
+    return process.platform === 'win32' ? norm.toLowerCase() : norm;
+  };
   const projectDirFull = data.workspace?.project_dir;
-  const hasDrifted = !!projectDirFull && projectDirFull !== currentDirFull;
+  const hasDrifted = !!projectDirFull && normalizePathForCompare(projectDirFull) !== normalizePathForCompare(currentDirFull);
   const projectDirBase = hasDrifted ? path.basename(projectDirFull) : '';
 
   // Compact single-glyph effort indicator. Absent when the model doesn't support the
@@ -302,6 +317,10 @@ process.stdin.on('end', () => {
     if (hasCtx) bits.push(`${colorForPct(ctxRounded)}${ctxRounded}%${RESET}`);
     if (fiveH != null) bits.push(`${colorForPct(fiveH)}5h${fiveH.toFixed(0)}${RESET}`);
     if (sevenD != null) bits.push(`${colorForPct(sevenD)}7d${sevenD.toFixed(0)}${RESET}`);
+    // Guaranteed non-empty fallback: before the first API response (fresh session),
+    // context_window and rate_limits are both absent, so bits would otherwise stay
+    // empty and render as a content-free box. Model name is always available.
+    if (bits.length === 0) bits.push(`${OVERLAY0}${model}${RESET}`);
     return { content: bits.join(' '), withTitle: false };
   }
 
@@ -309,6 +328,10 @@ process.stdin.on('end', () => {
   let chosen = buildMinimal();
   for (const attempt of attempts) {
     const candidate = attempt();
+    // Reject empty renders outright — buildNarrow can legitimately produce one (no
+    // ctx, no rate data yet), and an empty candidate would otherwise "fit" any width
+    // and get selected ahead of buildMinimal's guaranteed-non-empty fallback.
+    if (!candidate.content) continue;
     // total box width = content width + 4 (side chars + padding)
     if (visLen(candidate.content) + 4 <= COLUMNS - 1) {
       chosen = candidate;
