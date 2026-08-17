@@ -5,6 +5,8 @@ level, hostname, directory (with drift-from-project-root indicator), git branch,
 context usage, cache hit rate, cost (with burn rate), lines changed, and 5h/7d rate
 limits — all in an adaptive box that degrades gracefully as the terminal narrows.
 
+![Status line example](docs/screenshot.png)
+
 ## Setup on a new machine
 
 Requirements: Node.js and Git on PATH. Works in Git Bash / WSL on Windows and native
