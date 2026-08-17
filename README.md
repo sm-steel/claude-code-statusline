@@ -7,36 +7,40 @@ limits — all in an adaptive box that degrades gracefully as the terminal narro
 
 ## Setup on a new machine
 
-Requirements: Node.js and Git (for `git branch`) on PATH.
+Requirements: Node.js and Git on PATH. Works in Git Bash / WSL on Windows and native
+bash on Linux/macOS.
 
-1. Clone this repo somewhere (or just copy `statusline.mjs`):
+```bash
+git clone https://github.com/sm-steel/claude-code-statusline.git ~/.claude-statusline-repo
+cd ~/.claude-statusline-repo
+bash setup.sh
+```
 
-   ```bash
-   git clone https://github.com/sm-steel/claude-code-statusline.git ~/.claude-statusline-repo
-   cp ~/.claude-statusline-repo/statusline.mjs ~/.claude/statusline.mjs
-   ```
+That's it — `setup.sh`:
 
-2. Merge this into `~/.claude/settings.json` (add the key — don't overwrite the rest
-   of the file):
+1. Symlinks `~/.claude/statusline.mjs` to the repo's `statusline.mjs` (falls back to a
+   plain copy if symlinks aren't available — see below)
+2. Merges the `statusLine` config into `~/.claude/settings.json`, without touching
+   any other settings already there
 
-   ```json
-   {
-     "statusLine": {
-       "type": "command",
-       "command": "node ~/.claude/statusline.mjs",
-       "refreshInterval": 5
-     }
-   }
-   ```
+Send a new message in Claude Code (or restart it) and the status line appears.
 
-3. Restart Claude Code, or just send a new message — the status line picks up
-   automatically.
+### Windows symlink note
+
+Creating a symlink on Windows needs either **Developer Mode** enabled (Settings >
+Privacy & security > For developers) or running the script as Administrator. Without
+either, `setup.sh` falls back to a plain copy and tells you so — in that case you'll
+need to re-run `setup.sh` after each update instead of it applying automatically.
 
 ## Updating
 
-Pull the latest script and re-copy it into place:
+Re-run the same script on any machine — it pulls the latest and re-applies the
+symlink/settings merge (safe to run repeatedly):
 
 ```bash
-cd ~/.claude-statusline-repo && git pull
-cp statusline.mjs ~/.claude/statusline.mjs
+cd ~/.claude-statusline-repo && bash setup.sh
 ```
+
+If your machine has a real symlink (not the copy fallback), a plain `git pull` in the
+repo is actually enough on its own — the running script picks up changes immediately
+since `~/.claude/statusline.mjs` *is* the repo file, not a copy of it.
