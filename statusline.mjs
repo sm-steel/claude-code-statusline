@@ -35,6 +35,9 @@ const YELLOW = rgb('f9e2af');
 const RED = rgb('f38ba8');
 const OVERLAY0 = rgb('6c7086'); // dim separators / labels
 const BAR_BG = bg(...hexToRgb('5b385d')); // bar track background — Latte Pink blended 30% into Mocha Base
+const SHADOW_HEX = '0a0a0f'; // drop shadow — darker than Crust, the box's own darkest tone
+const SHADOW_BG = bg(...hexToRgb(SHADOW_HEX));
+const SHADOW_FG = rgb(SHADOW_HEX);
 
 // Single source of truth for what counts as an ANSI SGR escape, so the three
 // call sites that need slightly different regex forms (global replace, capturing
@@ -174,7 +177,19 @@ function box(content, { withTitle }) {
     top = `${LAVENDER}╭${'╌'.repeat(width + 2)}╮${RESET}`;
   }
 
-  return [top, mid, bottom].map((line) => applyGradientBg(line, total)).join('\n');
+  // Drop shadow: a shaded column trailing the right edge of the mid/bottom rows, plus a
+  // shaded row beneath, offset one column right — the box appears to float above it.
+  const shadowCol = `${SHADOW_BG} ${RESET}`;
+  // RESET goes *before* the leading space (not after) so the string doesn't literally
+  // start with a whitespace char — some renderers strip leading whitespace from a line
+  // before interpreting its ANSI codes, which was silently eating this offset.
+  // Upper-half-block glyphs (foreground-colored, no background) shade only the top half
+  // of the row's cell height, so the shadow reads as a thin sliver instead of a full row.
+  const shadowRow = `${RESET} ${SHADOW_FG}${'▀'.repeat(total)}${RESET}`;
+
+  const rows = [top, mid + shadowCol, bottom + shadowCol].map((line) => applyGradientBg(line, total));
+  rows.push(shadowRow);
+  return rows.join('\n');
 }
 
 let input = '';
