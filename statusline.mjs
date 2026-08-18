@@ -34,7 +34,7 @@ const GREEN = rgb('a6e3a1');
 const YELLOW = rgb('f9e2af');
 const RED = rgb('f38ba8');
 const OVERLAY0 = rgb('6c7086'); // dim separators / labels
-const SURFACE2 = rgb('45475a'); // empty bar track
+const BAR_BG = bg(...hexToRgb('5b385d')); // bar track background — Latte Pink blended 30% into Mocha Base
 
 // Single source of truth for what counts as an ANSI SGR escape, so the three
 // call sites that need slightly different regex forms (global replace, capturing
@@ -70,19 +70,25 @@ function visLen(s) {
 function applyGradientBg(line, total) {
   let col = 0;
   let out = '';
+  let protectedBg = false; // true while an explicit (non-gradient) bg is active, e.g. the bar track
   for (const chunk of line.split(ANSI_RE_SPLIT)) {
     if (!chunk) continue;
     if (ANSI_RE_FULL.test(chunk)) {
+      if (chunk === RESET) protectedBg = false;
+      else if (/48;2;/.test(chunk)) protectedBg = true;
       out += chunk;
       continue;
     }
     for (const ch of chunk) {
       const w = WIDE_CODEPOINTS.has(ch.codePointAt(0)) ? 2 : 1;
-      const t = total > 1 ? Math.min(1, col / (total - 1)) : 0;
-      const r = Math.round(GRADIENT_FROM[0] + (GRADIENT_TO[0] - GRADIENT_FROM[0]) * t);
-      const g = Math.round(GRADIENT_FROM[1] + (GRADIENT_TO[1] - GRADIENT_FROM[1]) * t);
-      const b = Math.round(GRADIENT_FROM[2] + (GRADIENT_TO[2] - GRADIENT_FROM[2]) * t);
-      out += bg(r, g, b) + ch;
+      if (!protectedBg) {
+        const t = total > 1 ? Math.min(1, col / (total - 1)) : 0;
+        const r = Math.round(GRADIENT_FROM[0] + (GRADIENT_TO[0] - GRADIENT_FROM[0]) * t);
+        const g = Math.round(GRADIENT_FROM[1] + (GRADIENT_TO[1] - GRADIENT_FROM[1]) * t);
+        const b = Math.round(GRADIENT_FROM[2] + (GRADIENT_TO[2] - GRADIENT_FROM[2]) * t);
+        out += bg(r, g, b);
+      }
+      out += ch;
       col += w;
     }
   }
@@ -110,10 +116,21 @@ function colorForCost(cost) {
   return GREEN;
 }
 
+// Braille dot levels, 1-7 dots filled (bottom-up), used for sub-character bar resolution.
+const DOTS = ['⣀', '⣄', '⣤', '⣦', '⣶', '⣷', '⣿'];
+
 function bar(pct, width) {
-  const filled = Math.max(0, Math.min(width, Math.round((pct / 100) * width)));
+  const units = Math.max(0, Math.min(width * 7, Math.round((pct / 100) * width * 7)));
+  const fullCells = Math.floor(units / 7);
+  const remainder = units % 7;
   const color = colorForPct(pct);
-  return `${color}${'▓'.repeat(filled)}${SURFACE2}${'░'.repeat(width - filled)}${RESET}`;
+  let filled = DOTS[6].repeat(fullCells);
+  let emptyCount = width - fullCells;
+  if (remainder > 0) {
+    filled += DOTS[remainder - 1];
+    emptyCount -= 1;
+  }
+  return `${BAR_BG}${color}${filled}${RESET}${BAR_BG}${' '.repeat(Math.max(0, emptyCount))}${RESET}`;
 }
 
 function fmtReset(epochSec) {
@@ -271,7 +288,7 @@ process.stdin.on('end', () => {
 
     const driftSeg = hasDrifted ? ` ${OVERLAY0}↰${projectDirBase}${RESET}` : '';
     const loc = branch
-      ? `${BLUE}📁 ${dir}${RESET} ${TEAL}${branch}${RESET}${driftSeg}`
+      ? `${BLUE}📁 ${dir}${RESET} ${TEAL} ${branch}${RESET}${driftSeg}`
       : `${BLUE}📁 ${dir}${RESET}${driftSeg}`;
     parts.push(loc);
 
