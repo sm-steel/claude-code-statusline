@@ -51,14 +51,20 @@ const stripAnsi = (s) => s.replace(ANSI_RE_GLOBAL, '');
 
 // Width = codepoint count, EXCEPT for symbols whose Unicode Emoji_Presentation
 // property is "Yes" — those render as a double-width color glyph by default, with no
-// variation selector needed. 📁 (U+1F4C1) and ⌛ (U+231B) are Emoji_Presentation=Yes.
-// ⏱ (U+23F1 STOPWATCH) is officially Emoji_Presentation=No — it's spec'd to default to
-// a narrow text glyph unless explicitly followed by U+FE0F, which this script never
-// adds — but it renders double-width in practice, undercounting the border by 1 and
-// overlapping the following character; treated as wide here to match reality over spec.
-// Spreading the string groups astral surrogate pairs into single iteration items so
-// they're counted once.
-const WIDE_CODEPOINTS = new Set([0x1f4c1, 0x231b, 0x23f1]); // 📁 ⌛ ⏱
+// variation selector needed. 📁 (U+1F4C1) and ⌛ (U+231B) are Emoji_Presentation=Yes;
+// ⏱ (U+23F1 STOPWATCH) is NOT — it defaults to a narrow text glyph unless explicitly
+// followed by U+FE0F, which this script never adds. Confirmed empirically: treating
+// all four emoji occurrences as uniformly narrow undercounted the border by exactly 3
+// (one per Emoji_Presentation=Yes occurrence: 📁 + two ⌛). Spreading the string groups
+// astral surrogate pairs into single iteration items so they're counted once.
+//
+// 2026-08-24: briefly added 0x23f1 here to try to fix a reported visual overlap right
+// after ⏱ — reverted. The terminal was still only advancing 1 column for it (border
+// broke on the content row once we claimed 2), so it isn't a column-count bug: the
+// font draws ⏱ oversized within its single cell and bleeds into whatever comes right
+// after. Fixed instead by putting a literal space after the icon at both ⏱ call sites
+// so the bleed has an empty cell to land in — no width-table change needed.
+const WIDE_CODEPOINTS = new Set([0x1f4c1, 0x231b]); // 📁 ⌛ — NOT 0x23f1 (⏱)
 function visLen(s) {
   let width = 0;
   for (const ch of stripAnsi(s)) width += WIDE_CODEPOINTS.has(ch.codePointAt(0)) ? 2 : 1;
@@ -329,8 +335,8 @@ process.stdin.on('end', () => {
 
     const costColor = colorForCost(cost);
     const costSeg = hasBurnRate
-      ? `${costColor}$${cost.toFixed(2)}${RESET} ${OVERLAY0}(${burnRate.toFixed(2)}/hr)${RESET} ${SKY}⏱${fmtDuration(durationMs)}${RESET}`
-      : `${costColor}$${cost.toFixed(2)}${RESET} ${SKY}⏱${fmtDuration(durationMs)}${RESET}`;
+      ? `${costColor}$${cost.toFixed(2)}${RESET} ${OVERLAY0}(${burnRate.toFixed(2)}/hr)${RESET} ${SKY}⏱ ${fmtDuration(durationMs)}${RESET}`
+      : `${costColor}$${cost.toFixed(2)}${RESET} ${SKY}⏱ ${fmtDuration(durationMs)}${RESET}`;
     parts.push(costSeg);
 
     if (hasLines) parts.push(linesStr);
