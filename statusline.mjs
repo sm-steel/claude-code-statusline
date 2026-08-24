@@ -51,13 +51,14 @@ const stripAnsi = (s) => s.replace(ANSI_RE_GLOBAL, '');
 
 // Width = codepoint count, EXCEPT for symbols whose Unicode Emoji_Presentation
 // property is "Yes" — those render as a double-width color glyph by default, with no
-// variation selector needed. 📁 (U+1F4C1) and ⌛ (U+231B) are Emoji_Presentation=Yes;
-// ⏱ (U+23F1 STOPWATCH) is NOT — it defaults to a narrow text glyph unless explicitly
-// followed by U+FE0F, which this script never adds. Confirmed empirically: treating
-// all four emoji occurrences as uniformly narrow undercounted the border by exactly 3
-// (one per Emoji_Presentation=Yes occurrence: 📁 + two ⌛). Spreading the string groups
-// astral surrogate pairs into single iteration items so they're counted once.
-const WIDE_CODEPOINTS = new Set([0x1f4c1, 0x231b]); // 📁 ⌛ — NOT 0x23f1 (⏱)
+// variation selector needed. 📁 (U+1F4C1) and ⌛ (U+231B) are Emoji_Presentation=Yes.
+// ⏱ (U+23F1 STOPWATCH) is officially Emoji_Presentation=No — it's spec'd to default to
+// a narrow text glyph unless explicitly followed by U+FE0F, which this script never
+// adds — but it renders double-width in practice, undercounting the border by 1 and
+// overlapping the following character; treated as wide here to match reality over spec.
+// Spreading the string groups astral surrogate pairs into single iteration items so
+// they're counted once.
+const WIDE_CODEPOINTS = new Set([0x1f4c1, 0x231b, 0x23f1]); // 📁 ⌛ ⏱
 function visLen(s) {
   let width = 0;
   for (const ch of stripAnsi(s)) width += WIDE_CODEPOINTS.has(ch.codePointAt(0)) ? 2 : 1;
@@ -136,17 +137,34 @@ function bar(pct, width) {
   return `${BAR_BG}${color}${filled}${RESET}${BAR_BG}${' '.repeat(Math.max(0, emptyCount))}${RESET}`;
 }
 
-function fmtReset(epochSec) {
-  if (!epochSec) return '';
-  const diffMs = epochSec * 1000 - Date.now();
-  if (diffMs <= 0) return 'now';
-  const totalMin = Math.floor(diffMs / 60000);
+// Formats a total-minutes value as the largest-appropriate d/h/m combo — shared by
+// the rate-limit reset countdown and the elapsed-session duration display below.
+function fmtMinutes(totalMin) {
   const d = Math.floor(totalMin / 1440);
   const h = Math.floor((totalMin % 1440) / 60);
   const m = totalMin % 60;
   if (d > 0) return `${d}d${h}h`;
   if (h > 0) return `${h}h${m}m`;
   return `${m}m`;
+}
+
+function fmtReset(epochSec) {
+  if (!epochSec) return '';
+  const diffMs = epochSec * 1000 - Date.now();
+  if (diffMs <= 0) return 'now';
+  return fmtMinutes(Math.floor(diffMs / 60000));
+}
+
+// Elapsed session duration — keeps seconds under an hour (matches the previous
+// mm:ss-style granularity), scales to h/d beyond that via fmtMinutes so a long
+// session reads as "1d0h" instead of "1464m52s".
+function fmtDuration(ms) {
+  const totalMin = Math.floor(ms / 60000);
+  if (totalMin < 60) {
+    const secs = Math.floor((ms % 60000) / 1000);
+    return `${totalMin}m${secs}s`;
+  }
+  return fmtMinutes(totalMin);
 }
 
 // Draws a rounded, softly-dashed box around one line of content.
@@ -253,8 +271,6 @@ process.stdin.on('end', () => {
 
   const cost = data.cost?.total_cost_usd ?? 0;
   const durationMs = data.cost?.total_duration_ms ?? 0;
-  const mins = Math.floor(durationMs / 60000);
-  const secs = Math.floor((durationMs % 60000) / 1000);
   // Burn rate ($/hr) — spend velocity rather than the running total. Needs at least
   // 30s of session time so an early tiny duration doesn't produce a wild extrapolation.
   const hasBurnRate = durationMs >= 30000 && cost > 0;
@@ -313,8 +329,8 @@ process.stdin.on('end', () => {
 
     const costColor = colorForCost(cost);
     const costSeg = hasBurnRate
-      ? `${costColor}$${cost.toFixed(2)}${RESET} ${OVERLAY0}(${burnRate.toFixed(2)}/hr)${RESET} ${SKY}⏱${mins}m${secs}s${RESET}`
-      : `${costColor}$${cost.toFixed(2)}${RESET} ${SKY}⏱${mins}m${secs}s${RESET}`;
+      ? `${costColor}$${cost.toFixed(2)}${RESET} ${OVERLAY0}(${burnRate.toFixed(2)}/hr)${RESET} ${SKY}⏱${fmtDuration(durationMs)}${RESET}`
+      : `${costColor}$${cost.toFixed(2)}${RESET} ${SKY}⏱${fmtDuration(durationMs)}${RESET}`;
     parts.push(costSeg);
 
     if (hasLines) parts.push(linesStr);
